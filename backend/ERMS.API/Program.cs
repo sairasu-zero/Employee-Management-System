@@ -1,5 +1,9 @@
 using ERMS.API.Configuration;
 using ERMS.API.Data;
+using ERMS.API.Hubs;
+using ERMS.API.Interfaces;
+using ERMS.API.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
@@ -16,7 +20,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Employee Records Management System (ERMS) API",
         Version = "v1",
-        Description = "ASP.NET Core Web API for ERMS - Phase 1 Development Foundation"
+        Description = "ASP.NET Core Web API for ERMS - Authentication, RBAC, Workforce Management & Audit Trail"
     });
 });
 
@@ -35,8 +39,39 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     });
 });
 
-// 4. Configure Development CORS Policy
-// Restricted specifically to frontend development origins
+// 4. Register Security & Core Infrastructure Services
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<IPasswordHasher, Argon2idPasswordHasher>();
+builder.Services.AddScoped<ITotpService, TotpService>();
+builder.Services.AddScoped<IEncryptionService, DataProtectionEncryptionService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IDocumentStorageService, DocumentStorageService>();
+builder.Services.AddSignalR();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// 5. Configure Authentication & Authorization
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "ERMS.Session";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// 6. Configure Development CORS Policy
 const string developmentCorsPolicy = "DevelopmentCorsPolicy";
 
 var configuredOrigins = builder.Configuration
@@ -45,6 +80,8 @@ var configuredOrigins = builder.Configuration
     {
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
         "http://localhost:3000"
     };
 
@@ -62,7 +99,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// 5. Configure Middleware Pipeline
+// 7. Configure Middleware Pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -79,7 +116,15 @@ app.UseRouting();
 // Enable configured CORS
 app.UseCors(developmentCorsPolicy);
 
-// Map API Controllers
+// Enable Authentication & Authorization
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Map API Controllers & Real-Time SignalR Hub
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
+
+// Root route redirects to Swagger documentation
+app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.Run();

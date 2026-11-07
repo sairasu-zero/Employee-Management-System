@@ -1,12 +1,12 @@
 import React from 'react';
-import { MainLayout } from './components/layout/MainLayout';
+import { AuthProvider } from './contexts/AuthContext';
 import { AppRoutes } from './routes/AppRoutes';
 
 export const App: React.FC = () => {
   return (
-    <MainLayout>
+    <AuthProvider>
       <AppRoutes />
-    </MainLayout>
+    </AuthProvider>
   );
 };
 
