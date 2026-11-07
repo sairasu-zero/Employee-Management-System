@@ -78,6 +78,8 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasIndex(u => u.Username).IsUnique();
             entity.HasIndex(u => u.Email).IsUnique();
+            entity.HasIndex(u => u.PasswordResetTokenHash).IsUnique();
+            entity.Property(u => u.PasswordResetTokenHash).HasMaxLength(64);
 
             entity.HasOne(u => u.Employee)
                 .WithOne(e => e.User)

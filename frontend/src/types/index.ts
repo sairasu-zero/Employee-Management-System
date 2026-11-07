@@ -91,6 +91,7 @@ export interface MfaVerificationData {
   email: string;
   code: string;
   isRecoveryCode?: boolean;
+  rememberMe?: boolean;
 }
 
 export interface ForgotPasswordData {

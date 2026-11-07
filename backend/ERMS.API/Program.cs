@@ -2,8 +2,8 @@ using ERMS.API.Configuration;
 using ERMS.API.Data;
 using ERMS.API.Hubs;
 using ERMS.API.Interfaces;
+using ERMS.API.Security;
 using ERMS.API.Services;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
@@ -50,24 +50,7 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // 5. Configure Authentication & Authorization
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
-    {
-        options.Cookie.Name = "ERMS.Session";
-        options.Cookie.HttpOnly = true;
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        options.Events.OnRedirectToLogin = context =>
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return Task.CompletedTask;
-        };
-        options.Events.OnRedirectToAccessDenied = context =>
-        {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            return Task.CompletedTask;
-        };
-    });
+builder.Services.AddErmsCookieAuthentication(builder.Environment.IsDevelopment());
 
 builder.Services.AddAuthorization();
 
@@ -76,14 +59,7 @@ const string developmentCorsPolicy = "DevelopmentCorsPolicy";
 
 var configuredOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>() ?? new[]
-    {
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000"
-    };
+    .Get<string[]>() ?? Array.Empty<string>();
 
 builder.Services.AddCors(options =>
 {
@@ -116,6 +92,8 @@ app.UseRouting();
 // Enable configured CORS
 app.UseCors(developmentCorsPolicy);
 
+app.UseMiddleware<UnsafeRequestOriginMiddleware>((object)configuredOrigins);
+
 // Enable Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
@@ -128,3 +106,5 @@ app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.Run();
+
+public partial class Program;

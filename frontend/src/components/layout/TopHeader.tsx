@@ -13,7 +13,7 @@ import {
   XCircle,
   Radio,
 } from 'lucide-react';
-import { signalRService } from '../../services/signalR';
+import { signalRService } from '../../services/signalr';
 import { NotificationMessageItem } from '../../types';
 
 interface TopHeaderProps {

@@ -148,10 +148,14 @@ export async function apiVerifyMfa(data: MfaVerificationData): Promise<AuthRespo
   });
 }
 
-export async function apiVerifyRecoveryCode(email: string, recoveryCode: string): Promise<AuthResponse> {
+export async function apiVerifyRecoveryCode(
+  email: string,
+  recoveryCode: string,
+  rememberMe = false
+): Promise<AuthResponse> {
   return apiFetch<AuthResponse>('/api/auth/mfa/recovery', {
     method: 'POST',
-    body: JSON.stringify({ email, recoveryCode }),
+    body: JSON.stringify({ email, recoveryCode, rememberMe }),
   });
 }
 

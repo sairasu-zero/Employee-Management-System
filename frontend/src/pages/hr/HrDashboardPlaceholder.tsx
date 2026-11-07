@@ -457,6 +457,7 @@ export const HrDashboardPlaceholder: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <FormInput
               label="Legal First Name *"
+              name="firstName"
               value={newFirstName}
               onChange={(e) => setNewFirstName(e.target.value)}
               placeholder="e.g. Maria"
@@ -464,6 +465,7 @@ export const HrDashboardPlaceholder: React.FC = () => {
             />
             <FormInput
               label="Legal Last Name *"
+              name="lastName"
               value={newLastName}
               onChange={(e) => setNewLastName(e.target.value)}
               placeholder="e.g. Santos"
@@ -473,6 +475,7 @@ export const HrDashboardPlaceholder: React.FC = () => {
 
           <FormInput
             label="Corporate Work Email *"
+            name="email"
             type="email"
             value={newEmail}
             onChange={(e) => setNewEmail(e.target.value)}
@@ -499,6 +502,7 @@ export const HrDashboardPlaceholder: React.FC = () => {
 
             <FormInput
               label="Job Position Title *"
+              name="position"
               value={newPosition}
               onChange={(e) => setNewPosition(e.target.value)}
               placeholder="e.g. Senior Security Analyst"

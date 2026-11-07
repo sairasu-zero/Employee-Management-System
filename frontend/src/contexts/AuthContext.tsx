@@ -96,6 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isMfaPending, setIsMfaPending] = useState<boolean>(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [pendingRememberMe, setPendingRememberMe] = useState(false);
 
   // Authenticate session on initial mount
   const checkAuthSession = useCallback(async () => {
@@ -111,6 +112,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch {
       // API check failed or endpoint not yet deployed; check localStorage session cache
+      if (!import.meta.env.DEV) {
+        localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+        return;
+      }
+
       try {
         const cached = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
         if (cached) {
@@ -142,6 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (response.requiresMfa) {
         setIsMfaPending(true);
         setPendingEmail(credentials.email);
+        setPendingRememberMe(credentials.rememberMe ?? false);
         setIsLoading(false);
         return { success: true, requiresMfa: true };
       }
@@ -151,10 +158,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(response.user));
         setIsMfaPending(false);
         setPendingEmail(null);
+        setPendingRememberMe(false);
         setIsLoading(false);
         return { success: true };
       }
     } catch (err: unknown) {
+      if (!import.meta.env.DEV) {
+        setIsLoading(false);
+        return {
+          success: false,
+          message: err instanceof Error ? err.message : 'Unable to authenticate with the server.',
+        };
+      }
+
       // If backend auth endpoint is not ready or demo email matches, support smooth demo login
       const emailLower = credentials.email.toLowerCase();
 
@@ -162,6 +178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (emailLower.includes('mfa') || emailLower === 'alexander.mitchell@erms.local' || emailLower === 'admin@erms.local') {
         setIsMfaPending(true);
         setPendingEmail(credentials.email);
+        setPendingRememberMe(credentials.rememberMe ?? false);
         setIsLoading(false);
         return { success: true, requiresMfa: true };
       }
@@ -212,11 +229,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       if (isRecoveryCode) {
-        await apiVerifyRecoveryCode(email, code);
+        await apiVerifyRecoveryCode(email, code, pendingRememberMe);
       } else {
-        await apiVerifyMfa({ email, code, isRecoveryCode });
+        await apiVerifyMfa({ email, code, isRecoveryCode, rememberMe: pendingRememberMe });
       }
     } catch {
+      if (!import.meta.env.DEV) {
+        setIsLoading(false);
+        return { success: false, message: 'Unable to verify the MFA code with the server.' };
+      }
+
       // If backend MFA endpoint is in development, accept valid 6-digit TOTP format or recovery format
       if (!isRecoveryCode && code.trim().length !== 6) {
         setIsLoading(false);
@@ -234,6 +256,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(verifiedUser));
     setIsMfaPending(false);
     setPendingEmail(null);
+    setPendingRememberMe(false);
     setIsLoading(false);
     return { success: true };
   };
@@ -251,6 +274,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message: response.message || 'Registration successful. You may now sign in.',
       };
     } catch {
+      if (!import.meta.env.DEV) {
+        setIsLoading(false);
+        return { success: false, message: 'Registration service is unavailable.' };
+      }
+
       // Development mock: simulate registration
       setIsLoading(false);
       return {
@@ -271,6 +299,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setIsMfaPending(false);
       setPendingEmail(null);
+      setPendingRememberMe(false);
       localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
       setIsLoading(false);
     }

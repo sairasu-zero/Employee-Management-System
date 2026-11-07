@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Security.Cryptography;
 using System.Security.Claims;
+using System.Text;
 using ERMS.API.Data;
 using ERMS.API.DTOs;
 using ERMS.API.Interfaces;
@@ -7,6 +10,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace ERMS.API.Controllers;
@@ -21,6 +25,7 @@ public class AuthController : ControllerBase
     private readonly IEncryptionService _encryptionService;
     private readonly IAuditService _auditService;
     private readonly ILogger<AuthController> _logger;
+    private readonly IWebHostEnvironment _environment;
 
     public AuthController(
         ApplicationDbContext dbContext,
@@ -28,7 +33,8 @@ public class AuthController : ControllerBase
         ITotpService totpService,
         IEncryptionService encryptionService,
         IAuditService auditService,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        IWebHostEnvironment environment)
     {
         _dbContext = dbContext;
         _passwordHasher = passwordHasher;
@@ -36,6 +42,7 @@ public class AuthController : ControllerBase
         _encryptionService = encryptionService;
         _auditService = auditService;
         _logger = logger;
+        _environment = environment;
     }
 
     [HttpPost("login")]
@@ -193,7 +200,7 @@ public class AuthController : ControllerBase
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             var userDto = BuildUserDto(user);
-            await IssueAuthCookieAsync(user, true);
+            await IssueAuthCookieAsync(user, request.RememberMe);
 
             await _auditService.LogLoginAttemptAsync(request.Email, true, null, ip, cancellationToken);
             await _auditService.LogActivityAsync(user.Id, user.Email, "MfaVerified", "Authentication", "MFA verification passed", "Auth/MFA", "Success", ip, cancellationToken);
@@ -212,7 +219,11 @@ public class AuthController : ControllerBase
     [ProducesResponseType(typeof(AuthResponseDto), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> VerifyRecoveryCode([FromBody] RecoveryCodeRequestDto request, CancellationToken cancellationToken)
     {
-        return await VerifyMfa(new MfaVerificationRequestDto(request.Email, request.RecoveryCode, IsRecoveryCode: true), cancellationToken);
+        return await VerifyMfa(new MfaVerificationRequestDto(
+            request.Email,
+            request.RecoveryCode,
+            IsRecoveryCode: true,
+            RememberMe: request.RememberMe), cancellationToken);
     }
 
     [HttpPost("mfa/setup")]
@@ -423,21 +434,122 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Email is required." });
         }
 
-        await _auditService.LogActivityAsync(null, request.Email, "ForgotPassword", "Authentication", "Password reset link requested", "Auth/Recovery", "Success", HttpContext.Connection.RemoteIpAddress?.ToString(), cancellationToken);
+        string? developmentResetToken = null;
+        if (_environment.IsDevelopment())
+        {
+            var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+            var user = await _dbContext.Users
+                .FirstOrDefaultAsync(account => account.Email.ToLower() == normalizedEmail && account.IsActive, cancellationToken);
 
-        // Security best practice: Always return generic success to prevent email enumeration
-        return Ok(new { success = true, message = "If the account exists, password recovery instructions have been dispatched." });
+            if (user != null)
+            {
+                developmentResetToken = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+                user.PasswordResetTokenHash = HashResetToken(developmentResetToken);
+                user.PasswordResetTokenExpiresAtUtc = DateTime.UtcNow.AddMinutes(30);
+                user.UpdatedAt = DateTime.UtcNow;
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        await _auditService.LogActivityAsync(
+            null,
+            null,
+            "PasswordResetRequested",
+            "Authentication",
+            "Password reset request processed",
+            "Auth/Recovery",
+            "Accepted",
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            cancellationToken);
+
+        return Ok(new ForgotPasswordResponseDto(
+            true,
+            "If the account exists, the password reset request has been accepted.",
+            developmentResetToken));
     }
 
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequestDto request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.Password))
+        if (string.IsNullOrWhiteSpace(request.Token) ||
+            string.IsNullOrWhiteSpace(request.Password) ||
+            request.Password.Length < 8 ||
+            request.Password.Length > 128)
         {
-            return BadRequest(new { success = false, message = "Reset token and new password are required." });
+            return BadRequest(new { success = false, message = "A reset token and a password between 8 and 128 characters are required." });
         }
 
-        return Ok(new { success = true, message = "Password has been successfully updated. You may now log in." });
+        var now = DateTime.UtcNow;
+        var tokenHash = HashResetToken(request.Token);
+        var account = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.PasswordResetTokenHash == tokenHash &&
+                user.PasswordResetTokenExpiresAtUtc > now &&
+                user.IsActive)
+            .Select(user => new { user.Id, user.Email })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (account == null)
+        {
+            await LogPasswordResetFailureAsync(cancellationToken);
+            return BadRequest(new { success = false, message = "The password reset link is invalid or expired." });
+        }
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var claimedCount = await _dbContext.Users
+            .Where(user => user.Id == account.Id &&
+                user.PasswordResetTokenHash == tokenHash &&
+                user.PasswordResetTokenExpiresAtUtc > now &&
+                user.IsActive)
+            .ExecuteUpdateAsync(
+                update => update
+                    .SetProperty(user => user.PasswordResetTokenHash, (string?)null)
+                    .SetProperty(user => user.PasswordResetTokenExpiresAtUtc, (DateTime?)null),
+                cancellationToken);
+
+        if (claimedCount != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            await LogPasswordResetFailureAsync(cancellationToken);
+            return BadRequest(new { success = false, message = "The password reset link is invalid or expired." });
+        }
+
+        var (passwordHash, passwordSalt) = _passwordHasher.HashPassword(request.Password);
+        var updatedCount = await _dbContext.Users
+            .Where(user => user.Id == account.Id && user.IsActive)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(user => user.PasswordHash, passwordHash)
+                .SetProperty(user => user.PasswordSalt, passwordSalt)
+                .SetProperty(user => user.SessionVersion, user => user.SessionVersion + 1)
+                .SetProperty(user => user.FailedLoginAttempts, 0)
+                .SetProperty(user => user.LockoutEnd, (DateTime?)null)
+                .SetProperty(user => user.UpdatedAt, now),
+                cancellationToken);
+
+        if (updatedCount != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            await LogPasswordResetFailureAsync(cancellationToken);
+            return BadRequest(new { success = false, message = "The password reset link is invalid or expired." });
+        }
+
+        await _dbContext.RefreshTokens
+            .Where(refreshToken => refreshToken.UserId == account.Id && refreshToken.RevokedAt == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(refreshToken => refreshToken.RevokedAt, now), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await _auditService.LogActivityAsync(
+            account.Id,
+            account.Email,
+            "PasswordResetCompleted",
+            "Authentication",
+            "Password reset completed",
+            "Auth/Recovery",
+            "Success",
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            cancellationToken);
+
+        return Ok(new { success = true, message = "Password updated. You can now sign in." });
     }
 
     private async Task IssueAuthCookieAsync(User user, bool rememberMe)
@@ -450,6 +562,7 @@ public class AuthController : ControllerBase
             new Claim(ClaimTypes.Name, user.Username),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Role, roleName),
+            new Claim("session_version", user.SessionVersion.ToString(CultureInfo.InvariantCulture)),
         };
 
         if (user.Role?.RolePermissions != null)
@@ -473,6 +586,25 @@ public class AuthController : ControllerBase
         };
 
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
+    }
+
+    private static string HashResetToken(string token)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    }
+
+    private Task LogPasswordResetFailureAsync(CancellationToken cancellationToken)
+    {
+        return _auditService.LogActivityAsync(
+            null,
+            null,
+            "PasswordResetFailed",
+            "Authentication",
+            "Invalid or expired password reset token submitted",
+            "Auth/Recovery",
+            "Denied",
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            cancellationToken);
     }
 
     private static UserDto BuildUserDto(User user)

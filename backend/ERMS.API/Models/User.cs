@@ -35,6 +35,12 @@ public class User
     /// </summary>
     public string PasswordSalt { get; set; } = string.Empty;
 
+    public string? PasswordResetTokenHash { get; set; }
+
+    public DateTime? PasswordResetTokenExpiresAtUtc { get; set; }
+
+    public int SessionVersion { get; set; }
+
     /// <summary>
     /// Primary or default role identifier.
     /// </summary>

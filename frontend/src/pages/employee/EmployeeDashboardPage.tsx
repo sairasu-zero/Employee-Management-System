@@ -19,7 +19,6 @@ import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 import { FormInput } from '../../components/ui/FormInput';
-import { ProgressBar } from '../../components/ui/ProgressBar';
 import {
   apiGetLeaveRequests,
   apiSubmitLeave,
@@ -545,6 +544,7 @@ export const EmployeeDashboardPage: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <FormInput
               label="Start Date *"
+              name="startDate"
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
@@ -552,6 +552,7 @@ export const EmployeeDashboardPage: React.FC = () => {
             />
             <FormInput
               label="End Date *"
+              name="endDate"
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
@@ -561,6 +562,7 @@ export const EmployeeDashboardPage: React.FC = () => {
 
           <FormInput
             label="Reason / Notes *"
+            name="reason"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Provide context for your manager..."
@@ -599,6 +601,7 @@ export const EmployeeDashboardPage: React.FC = () => {
         <form onSubmit={handleUploadDocument} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <FormInput
             label="Document Name"
+            name="documentName"
             value={docName}
             onChange={(e) => setDocName(e.target.value)}
             placeholder="e.g. Employment Contract 2026"

@@ -186,6 +186,14 @@ namespace ERMS.API.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("DocumentName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<Guid>("EmployeeId")
                         .HasColumnType("uuid");
 
@@ -196,9 +204,27 @@ namespace ERMS.API.Migrations
                     b.Property<long>("FileSize")
                         .HasColumnType("bigint");
 
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("StoredFileName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("UploadedAt")
                         .HasColumnType("timestamp with time zone");
@@ -209,6 +235,8 @@ namespace ERMS.API.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("EmployeeId");
+
+                    b.HasIndex("IsDeleted");
 
                     b.ToTable("EmployeeDocuments");
                 });
@@ -257,6 +285,64 @@ namespace ERMS.API.Migrations
                     b.HasIndex("PreviousDepartmentId");
 
                     b.ToTable("EmploymentHistories");
+                });
+
+            modelBuilder.Entity("ERMS.API.Models.LeaveRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Days")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("EndDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LeaveType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("EmployeeId");
+
+                    b.HasIndex("StartDate");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("LeaveRequests");
                 });
 
             modelBuilder.Entity("ERMS.API.Models.LoginAttempt", b =>
@@ -489,6 +575,13 @@ namespace ERMS.API.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("PasswordResetTokenExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PasswordResetTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("PasswordSalt")
                         .IsRequired()
                         .HasColumnType("text");
@@ -498,6 +591,9 @@ namespace ERMS.API.Migrations
 
                     b.Property<Guid?>("RoleId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("SessionVersion")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -512,6 +608,9 @@ namespace ERMS.API.Migrations
                         .IsUnique();
 
                     b.HasIndex("EmployeeId")
+                        .IsUnique();
+
+                    b.HasIndex("PasswordResetTokenHash")
                         .IsUnique();
 
                     b.HasIndex("RoleId");
@@ -606,6 +705,17 @@ namespace ERMS.API.Migrations
                     b.Navigation("NewDepartment");
 
                     b.Navigation("PreviousDepartment");
+                });
+
+            modelBuilder.Entity("ERMS.API.Models.LeaveRequest", b =>
+                {
+                    b.HasOne("ERMS.API.Models.Employee", "Employee")
+                        .WithMany("LeaveRequests")
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Employee");
                 });
 
             modelBuilder.Entity("ERMS.API.Models.MfaConfiguration", b =>
@@ -710,6 +820,8 @@ namespace ERMS.API.Migrations
                     b.Navigation("Documents");
 
                     b.Navigation("EmploymentHistories");
+
+                    b.Navigation("LeaveRequests");
 
                     b.Navigation("User");
                 });

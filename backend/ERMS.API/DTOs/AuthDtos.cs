@@ -18,16 +18,24 @@ public record RegisterRequestDto(
 public record MfaVerificationRequestDto(
     string Email,
     string Code,
-    bool IsRecoveryCode = false
+    bool IsRecoveryCode = false,
+    bool RememberMe = false
 );
 
 public record RecoveryCodeRequestDto(
     string Email,
-    string RecoveryCode
+    string RecoveryCode,
+    bool RememberMe = false
 );
 
 public record ForgotPasswordRequestDto(
     string Email
+);
+
+public record ForgotPasswordResponseDto(
+    bool Success,
+    string Message,
+    string? DevelopmentResetToken = null
 );
 
 public record ResetPasswordRequestDto(
